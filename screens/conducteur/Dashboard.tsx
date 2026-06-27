@@ -16,23 +16,43 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
-import { getPiStatus, activerBuzzer, desactiverBuzzer, PiStatus } from '../../services/apiLocal';
-import { getIpPi } from '../../services/storage';
+
+// ============================================
+// IMPORTS POUR LE MODE RÉEL (RASPBERRY PI)
+// ============================================
+// import { getPiStatus, activerBuzzer, desactiverBuzzer, PiStatus } from '../../services/apiLocal';
+// import { getIpPi } from '../../services/storage';
 
 const { width } = Dimensions.get('window');
 
+type EtatConducteur = 'EVEILLE' | 'FATIGUE' | 'SOMNOLENCE' | 'DISTRACTION';
+
 export default function Dashboard() {
   const navigation = useNavigation();
-  const [status, setStatus] = useState<PiStatus | null>(null);
-  const [isConnected, setIsConnected] = useState(true);
+  
+  // ============================================
+  // ÉTATS
+  // ============================================
+  const [etat, setEtat] = useState<EtatConducteur>('EVEILLE');
   const [alerteActive, setAlerteActive] = useState(false);
   const [temps, setTemps] = useState('');
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [isConnected, setIsConnected] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   
+  // Pour le mode réel
+  // const [status, setStatus] = useState<PiStatus | null>(null);
+  // const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  
+  // ============================================
+  // ANIMATIONS
+  // ============================================
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const alertAnim = useRef(new Animated.Value(0)).current;
   const rotationAnim = useRef(new Animated.Value(0)).current;
 
+  // ============================================
+  // MISE À JOUR DE L'HEURE
+  // ============================================
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
@@ -41,6 +61,9 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  // ============================================
+  // ANIMATIONS
+  // ============================================
   useEffect(() => {
     Animated.loop(
       Animated.timing(rotationAnim, {
@@ -68,6 +91,40 @@ export default function Dashboard() {
     ).start();
   }, []);
 
+  // ============================================
+  // ═════════════════════════════════════════════
+  // MODE DÉMO (SIMULATION SANS RASPBERRY PI)
+  // ═════════════════════════════════════════════
+  // ============================================
+  useEffect(() => {
+    const statuses: EtatConducteur[] = ['EVEILLE', 'FATIGUE', 'SOMNOLENCE', 'DISTRACTION'];
+    let index = 0;
+    
+    const interval = setInterval(() => {
+      const newEtat = statuses[index % statuses.length];
+      setEtat(newEtat);
+      
+      if (newEtat === 'SOMNOLENCE' || newEtat === 'DISTRACTION') {
+        declencherAlerte();
+      } else {
+        setAlerteActive(false);
+        stopAlerte();
+      }
+      
+      index++;
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // ============================================
+  // ═════════════════════════════════════════════
+  // MODE RÉEL (RASPBERRY PI) - COMMENTÉ
+  // ═════════════════════════════════════════════
+  // DÉCOMMENTEZ TOUT CE BLOC POUR UTILISER LE PI
+  // ============================================
+  /*
+  // Vérifier la connexion au Pi
   const verifierConnexion = async () => {
     try {
       const ip = await getIpPi();
@@ -87,14 +144,16 @@ export default function Dashboard() {
     }
   };
 
+  // Récupérer le statut du Pi
   const fetchStatus = async () => {
     try {
       const data = await getPiStatus();
       setStatus(data);
+      setEtat(data.etat);
       setIsConnected(true);
       
       if (data.etat === 'SOMNOLENCE' || data.etat === 'DISTRACTION') {
-        declencherAlerte(data);
+        declencherAlerte();
       } else {
         if (alerteActive) {
           arreterAlerte();
@@ -106,6 +165,7 @@ export default function Dashboard() {
     }
   };
 
+  // Démarrer le polling
   useFocusEffect(
     React.useCallback(() => {
       let mounted = true;
@@ -136,8 +196,70 @@ export default function Dashboard() {
       };
     }, [])
   );
+  */
 
-  const declencherAlerte = async (data: PiStatus) => {
+  // ============================================
+  // FONCTIONS ALERTES
+  // ============================================
+  const declencherAlerte = () => {
+    if (!alerteActive) {
+      setAlerteActive(true);
+      
+      // Vibration
+      Vibration.vibrate([500, 200, 500, 200, 500], true);
+      
+      // Haptique
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      
+      // Animation d'alerte
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(alertAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(alertAnim, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+      
+      // Alerte visuelle
+      Alert.alert(
+        '⚠️ ALERTE DÉTECTÉE',
+        `État: ${etat}\nNiveau: 3/3`,
+        [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              setAlerteActive(false);
+              stopAlerte();
+            }
+          },
+          { 
+            text: 'Voir historique', 
+            onPress: () => navigation.navigate('Historique' as never)
+          },
+        ],
+        { cancelable: false }
+      );
+    }
+  };
+
+  const stopAlerte = () => {
+    Vibration.cancel();
+    alertAnim.setValue(0);
+  };
+
+  // ============================================
+  // FONCTIONS DU MODE RÉEL (PI) - COMMENTÉES
+  // ============================================
+  /*
+  // Déclencher alerte avec Pi
+  const declencherAlertePi = async (data: PiStatus) => {
     if (!alerteActive) {
       setAlerteActive(true);
       
@@ -172,7 +294,7 @@ export default function Dashboard() {
           { 
             text: 'OK', 
             onPress: async () => {
-              await arreterAlerte();
+              await arreterAlertePi();
             }
           },
           { 
@@ -185,7 +307,8 @@ export default function Dashboard() {
     }
   };
 
-  const arreterAlerte = async () => {
+  // Arrêter l'alerte avec Pi
+  const arreterAlertePi = async () => {
     setAlerteActive(false);
     Vibration.cancel();
     alertAnim.setValue(0);
@@ -197,14 +320,27 @@ export default function Dashboard() {
     }
   };
 
-  const reinitialiser = async () => {
-    await arreterAlerte();
+  // Réinitialiser avec Pi
+  const reinitialiserPi = async () => {
+    await arreterAlertePi();
     await fetchStatus();
   };
+  */
 
+  // ============================================
+  // RÉINITIALISER (MODE DÉMO)
+  // ============================================
+  const reinitialiser = () => {
+    setEtat('EVEILLE');
+    setAlerteActive(false);
+    stopAlerte();
+  };
+
+  // ============================================
+  // FONCTIONS UI
+  // ============================================
   const getEtatColor = (): string => {
-    if (!status) return '#666';
-    switch (status.etat) {
+    switch (etat) {
       case 'EVEILLE': return '#4CAF50';
       case 'FATIGUE': return '#FFC107';
       case 'SOMNOLENCE': return '#FF5722';
@@ -214,8 +350,7 @@ export default function Dashboard() {
   };
 
   const getEtatIcon = (): string => {
-    if (!status) return 'help-circle-outline';
-    switch (status.etat) {
+    switch (etat) {
       case 'EVEILLE': return 'happy-outline';
       case 'FATIGUE': return 'alert-circle-outline';
       case 'SOMNOLENCE': return 'bed-outline';
@@ -225,19 +360,21 @@ export default function Dashboard() {
   };
 
   const getEtatMessage = (): string => {
-    if (!status) return 'En attente...';
-    switch (status.etat) {
+    switch (etat) {
       case 'EVEILLE': return '🟢 Conducteur vigilant';
       case 'FATIGUE': return '🟡 Signes de fatigue';
       case 'SOMNOLENCE': return '🔴 SOMNOLENCE DÉTECTÉE !';
       case 'DISTRACTION': return '🔴 DISTRACTION DÉTECTÉE !';
-      default: return status.etat;
+      default: return etat;
     }
   };
 
+  // ============================================
+  // RENDER
+  // ============================================
   return (
     <ImageBackground
-      source={require('../../assets/background_2.png')}
+      source={require('../../assets/background.jpg')}
       style={styles.background}
       resizeMode="cover"
     >
@@ -251,11 +388,14 @@ export default function Dashboard() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          {/* ==========================================
+              EN-TÊTE
+              ========================================== */}
           <View style={styles.header}>
             <View>
               <Text style={styles.headerTitle}>YC-DriveSafe</Text>
               <Text style={styles.headerSubtitle}>
-                {isConnected ? '🟢 Connecté' : '🔴 Déconnecté'}
+                {isConnected ? '🟢 Connecté' : '🔴 Déconnecté (Mode démo)'}
               </Text>
             </View>
             <View style={styles.headerRight}>
@@ -269,6 +409,9 @@ export default function Dashboard() {
             </View>
           </View>
 
+          {/* ==========================================
+              STATUT
+              ========================================== */}
           <Animated.View
             style={[
               styles.statusContainer,
@@ -290,32 +433,31 @@ export default function Dashboard() {
               <Ionicons name={getEtatIcon()} size={80} color="#fff" />
               <Text style={styles.statusMessage}>{getEtatMessage()}</Text>
               
-              {status && (
-                <>
-                  <View style={[styles.badge, { backgroundColor: getEtatColor() }]}>
-                    <Text style={styles.badgeText}>{status.etat}</Text>
-                  </View>
-                  
-                  <View style={styles.statusDetails}>
-                    <Text style={styles.detailText}>
-                      Niveau: {status.niveau}/3
-                    </Text>
-                    <Text style={styles.detailText}>
-                      Confiance: {Math.round(status.confiance * 100)}%
-                    </Text>
-                    <Text style={styles.detailText}>
-                      Température: {status.temperature}°C
-                    </Text>
-                  </View>
-                </>
-              )}
+              <View style={[styles.badge, { backgroundColor: getEtatColor() }]}>
+                <Text style={styles.badgeText}>{etat}</Text>
+              </View>
+              
+              <View style={styles.statusDetails}>
+                <Text style={styles.detailText}>
+                  Niveau: {etat === 'EVEILLE' ? 1 : etat === 'FATIGUE' ? 2 : 3}/3
+                </Text>
+                <Text style={styles.detailText}>
+                  Confiance: 95%
+                </Text>
+                <Text style={styles.detailText}>
+                  Température: 28.5°C
+                </Text>
+              </View>
               
               <Text style={styles.statusTime}>
-                {status ? new Date(status.timestamp).toLocaleTimeString() : '--:--:--'}
+                {temps}
               </Text>
             </LinearGradient>
           </Animated.View>
 
+          {/* ==========================================
+              ACTIONS RAPIDES
+              ========================================== */}
           <View style={styles.actionsContainer}>
             <TouchableOpacity 
               style={styles.actionButton}
@@ -344,15 +486,14 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {!isConnected && (
-            <TouchableOpacity 
-              style={styles.reconnectButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons name="wifi-outline" size={20} color="#fff" />
-              <Text style={styles.reconnectText}>Reconnecter au Pi</Text>
-            </TouchableOpacity>
-          )}
+          {/* ==========================================
+              INDICATEUR DE MODE
+              ========================================== */}
+          <View style={styles.modeIndicator}>
+            <Text style={styles.modeText}>
+              ⚡ Mode: {isConnected ? 'RÉEL (Pi)' : 'DÉMO (Simulation)'}
+            </Text>
+          </View>
 
           <Text style={styles.footer}>© 2026 YC-DriveSafe</Text>
         </ScrollView>
@@ -361,6 +502,9 @@ export default function Dashboard() {
   );
 }
 
+// ============================================
+// STYLES
+// ============================================
 const styles = StyleSheet.create({
   background: {
     flex: 1,
@@ -486,19 +630,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  reconnectButton: {
-    flexDirection: 'row',
+  modeIndicator: {
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    padding: 12,
-    borderRadius: 10,
     marginTop: 10,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 10,
   },
-  reconnectText: {
-    color: '#fff',
-    fontSize: 14,
+  modeText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
   },
   footer: {
     color: 'rgba(255,255,255,0.2)',
